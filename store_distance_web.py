@@ -3,6 +3,7 @@ import pandas as pd
 import math
 import os
 from io import BytesIO
+from datetime import datetime
 
 # ========== 配置 ==========
 st.set_page_config(
@@ -51,179 +52,182 @@ def load_and_clean_store_data(df):
 
     return df.reset_index(drop=True)
 
-def calculate_distances(base_df, query_df):
+def calculate_distances_full(base_df, query_df):
+    """计算查询点与门店距离，返回完整结果（包含店中店和独立店分别检查）"""
     results = []
+    
+    dianzhongdian = base_df[base_df['门店类型'] == '店中店']
+    dulidian = base_df[base_df['门店类型'] == '独立店']
+    
     for _, q_row in query_df.iterrows():
         q_lat = q_row['纬度']
         q_lon = q_row['经度']
         q_name = q_row.get('名称/备注', f"查询点{len(results)+1}")
 
-        min_dist = float('inf')
-        nearest_store = None
-        nearest_lat = None
-        nearest_lon = None
-        nearest_type = None
-
-        for _, s_row in base_df.iterrows():
+        # 店中店检查
+        dzd_dist = float('inf')
+        dzd_name = None
+        for _, s_row in dianzhongdian.iterrows():
             dist = haversine_distance(q_lat, q_lon, s_row['纬度'], s_row['经度'])
-            if dist < min_dist:
-                min_dist = dist
-                nearest_store = s_row['门店名称']
-                nearest_lat = s_row['纬度']
-                nearest_lon = s_row['经度']
-                nearest_type = s_row.get('门店类型', '')
+            if dist < dzd_dist:
+                dzd_dist = dist
+                dzd_name = s_row['门店名称']
+        
+        dzd_pass = dzd_dist >= 500 if len(dianzhongdian) > 0 else True
+        if len(dianzhongdian) == 0:
+            dzd_dist = None
+            dzd_name = '无店中店数据'
 
+        # 独立店检查
+        dld_dist = float('inf')
+        dld_name = None
+        for _, s_row in dulidian.iterrows():
+            dist = haversine_distance(q_lat, q_lon, s_row['纬度'], s_row['经度'])
+            if dist < dld_dist:
+                dld_dist = dist
+                dld_name = s_row['门店名称']
+        
+        dld_pass = dld_dist >= 1000 if len(dulidian) > 0 else True
+        if len(dulidian) == 0:
+            dld_dist = None
+            dld_name = '无独立店数据'
+
+        # 总体结论
+        overall_pass = dzd_pass and dld_pass
+        
         results.append({
             '查询点': q_name,
             '查询经度': q_lon,
             '查询纬度': q_lat,
-            '最近门店': nearest_store,
-            '门店类型': nearest_type,
-            '门店经度': nearest_lon,
-            '门店纬度': nearest_lat,
-            '最小距离(米)': round(min_dist, 2),
-            '是否小于500米': '✅ 是' if min_dist < 500 else '❌ 否'
+            '最近店中店': dzd_name,
+            '店中店距离(米)': round(dzd_dist, 2) if dzd_dist else None,
+            '店中店≥500m': '✅ 是' if dzd_pass else '❌ 否' if dzd_dist else '⚠️ 无数据',
+            '最近独立店': dld_name,
+            '独立店距离(米)': round(dld_dist, 2) if dld_dist else None,
+            '独立店≥1km': '✅ 是' if dld_pass else '❌ 否' if dld_dist else '⚠️ 无数据',
+            '总体结论': '✅ 通过' if overall_pass else '❌ 不通过'
         })
+    
     return pd.DataFrame(results)
-
-def check_store_feasibility(base_df, new_lat, new_lon):
-    results = {}
-    thresholds = {'独立店': 1000, '店中店': 500}
-
-    for store_type, threshold in thresholds.items():
-        type_stores = base_df[base_df['门店类型'] == store_type]
-        if type_stores.empty:
-            results[store_type] = {'距离': None, '通过': True, '说明': f'无{store_type}门店数据'}
-            continue
-
-        min_dist = float('inf')
-        nearest = None
-        for _, s_row in type_stores.iterrows():
-            dist = haversine_distance(new_lat, new_lon, s_row['纬度'], s_row['经度'])
-            if dist < min_dist:
-                min_dist = dist
-                nearest = s_row['门店名称']
-
-        passed = min_dist >= threshold
-        results[store_type] = {
-            '距离': round(min_dist, 2),
-            '最近门店': nearest,
-            '阈值': threshold,
-            '通过': passed,
-            '说明': f'与最近{store_type}（{nearest}）距离{min_dist:.0f}m，需≥{threshold}m'
-        }
-
-    return results
 
 # ========== 主应用 ==========
 def main():
     st.title("📍 门店距离查询工具")
-    st.markdown("计算查询点与门店之间的直线距离，找出最近的门店")
+    st.markdown("计算查询点与门店之间的直线距离，判断是否符合开店距离要求")
+    st.caption("规则：与店中店距离需 ≥ 500米，与独立店距离需 ≥ 1000米")
 
     if 'base_df' not in st.session_state:
         st.session_state.base_df = None
-    if 'base_file_path' not in st.session_state:
-        st.session_state.base_file_path = None
     if 'is_admin' not in st.session_state:
         st.session_state.is_admin = False
 
+    default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stores_base.xlsx")
+
+    # ===== 侧边栏 =====
     with st.sidebar:
         st.header("🏪 门店基础数据")
 
-        default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stores_base.xlsx")
-
-        uploaded_base = st.file_uploader("上传门店Excel", type=['xlsx', 'xls'], key="base_upload")
-
-        if uploaded_base:
-            try:
-                raw_df = pd.read_excel(uploaded_base)
-                st.session_state.base_df = load_and_clean_store_data(raw_df)
-                st.session_state.base_file_path = uploaded_base.name
-                st.success(f"已加载 {len(st.session_state.base_df)} 家门店")
-            except Exception as e:
-                st.error(f"读取失败: {e}")
-        elif os.path.exists(default_path) and st.session_state.base_df is None:
+        # 加载门店数据
+        if st.session_state.base_df is None and os.path.exists(default_path):
             try:
                 raw_df = pd.read_excel(default_path)
                 st.session_state.base_df = load_and_clean_store_data(raw_df)
-                st.session_state.base_file_path = default_path
-                st.success(f"已加载 {len(st.session_state.base_df)} 家门店")
             except Exception as e:
-                st.error(f"读取失败: {e}")
+                st.error(f"读取门店数据失败: {e}")
 
         if st.session_state.base_df is not None:
             df = st.session_state.base_df
             type_counts = df['门店类型'].value_counts() if '门店类型' in df.columns else pd.Series()
-            info_parts = [f"共 {len(df)} 家门店"]
+            info_parts = [f"共 {len(df)} 家"]
             for t, c in type_counts.items():
                 info_parts.append(f"{t}: {c}家")
-            st.info("　|　".join(info_parts))
+            st.info(" | ".join(info_parts))
 
             with st.expander("📋 查看门店列表"):
                 st.dataframe(st.session_state.base_df, use_container_width=True, height=300)
 
-            with st.expander("🔐 管理员模式"):
-                if st.session_state.is_admin:
-                    st.success("已进入管理员模式")
-                    edited_df = st.data_editor(
-                        st.session_state.base_df,
-                        num_rows="dynamic",
-                        use_container_width=True,
-                        key="base_data_editor",
-                        column_config={
-                            '门店类型': st.column_config.SelectboxColumn(options=['独立店', '店中店'])
-                        }
-                    )
-                    if edited_df is not None:
-                        st.session_state.base_df = load_and_clean_store_data(edited_df)
+        # 管理员入口
+        with st.expander("🔧 修改门店列表"):
+            if st.session_state.is_admin:
+                st.success("已进入管理模式")
+                
+                # 管理员可以上传新的门店文件
+                st.markdown("**上传新门店数据**")
+                admin_upload = st.file_uploader("上传门店Excel", type=['xlsx', 'xls'], key="admin_upload")
+                if admin_upload:
+                    try:
+                        raw_df = pd.read_excel(admin_upload)
+                        st.session_state.base_df = load_and_clean_store_data(raw_df)
+                        st.session_state.base_df.to_excel(default_path, index=False)
+                        st.success(f"已更新 {len(st.session_state.base_df)} 家门店")
+                    except Exception as e:
+                        st.error(f"读取失败: {e}")
 
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("💾 保存到文件"):
-                            try:
-                                st.session_state.base_df.to_excel(default_path, index=False)
-                                st.success("保存成功")
-                            except Exception as e:
-                                st.error(f"保存失败: {e}")
-                    with col2:
-                        if st.button("🔄 重新加载"):
-                            if os.path.exists(default_path):
-                                raw_df = pd.read_excel(default_path)
-                                st.session_state.base_df = load_and_clean_store_data(raw_df)
-                                st.success("已重新加载")
-
-                    if st.button("退出管理员模式"):
-                        st.session_state.is_admin = False
-                        st.rerun()
-                else:
-                    pwd = st.text_input("请输入管理员密码", type="password")
-                    if st.button("登录"):
-                        if pwd == ADMIN_PASSWORD:
-                            st.session_state.is_admin = True
-                            st.rerun()
-                        else:
-                            st.error("密码错误")
-
-            with st.expander("📥 下载模板"):
-                template_data = {
-                    '名称/备注': ['示例查询点1', '示例查询点2'],
-                    '经度': [116.504885, 121.473701],
-                    '纬度': [39.885358, 31.230416]
-                }
-                template_df = pd.DataFrame(template_data)
-                buffer = BytesIO()
-                template_df.to_excel(buffer, index=False)
-                buffer.seek(0)
-                st.download_button(
-                    label="📥 下载查询模板（示例数据）",
-                    data=buffer,
-                    file_name="query_template.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                st.divider()
+                
+                # 编辑现有数据
+                st.markdown("**编辑现有数据**")
+                edited_df = st.data_editor(
+                    st.session_state.base_df,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    key="base_data_editor",
+                    column_config={
+                        '门店类型': st.column_config.SelectboxColumn(options=['独立店', '店中店'])
+                    }
                 )
-                st.caption("模板包含2行示例数据，请按格式填写后上传查询")
+                if edited_df is not None:
+                    st.session_state.base_df = load_and_clean_store_data(edited_df)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💾 保存修改"):
+                        try:
+                            st.session_state.base_df.to_excel(default_path, index=False)
+                            st.success("已保存")
+                        except Exception as e:
+                            st.error(f"保存失败: {e}")
+                with col2:
+                    if st.button("🔄 重新加载"):
+                        if os.path.exists(default_path):
+                            raw_df = pd.read_excel(default_path)
+                            st.session_state.base_df = load_and_clean_store_data(raw_df)
+                            st.success("已重新加载")
+
+                if st.button("退出管理模式"):
+                    st.session_state.is_admin = False
+                    st.rerun()
+            else:
+                pwd = st.text_input("请输入管理员密码", type="password")
+                if st.button("登录"):
+                    if pwd == ADMIN_PASSWORD:
+                        st.session_state.is_admin = True
+                        st.rerun()
+                    else:
+                        st.error("密码错误")
+
+        st.divider()
+        
+        # 下载模板（直接显示按钮）
+        st.markdown("**下载查询模板**")
+        template_data = {
+            '名称/备注': ['示例查询点1', '示例查询点2'],
+            '经度': [116.504885, 121.473701],
+            '纬度': [39.885358, 31.230416]
+        }
+        template_df = pd.DataFrame(template_data)
+        buffer = BytesIO()
+        template_df.to_excel(buffer, index=False)
+        buffer.seek(0)
+        st.download_button(
+            label="📥 下载查询模板（示例数据）",
+            data=buffer,
+            file_name="query_template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     # ===== 主区域 =====
-    tab1, tab2, tab3, tab4 = st.tabs(["✏️ 手动输入", "🔍 距离查询", "📊 批量查询", "🏪 新店可行性检查"])
+    tab1, tab2 = st.tabs(["✏️ 手动输入", "📁 文件输入"])
 
     # ----- Tab 1: 手动输入 -----
     with tab1:
@@ -248,7 +252,7 @@ def main():
 
         if st.button("🔍 计算手动输入", type="primary"):
             if st.session_state.base_df is None:
-                st.error("请先上传门店基础数据")
+                st.error("请先加载门店基础数据")
             else:
                 query_data = []
                 if input_lon.strip() and input_lat.strip():
@@ -283,15 +287,16 @@ def main():
                 if query_data:
                     query_df = pd.DataFrame(query_data)
                     with st.spinner("计算中..."):
-                        result_df = calculate_distances(st.session_state.base_df, query_df)
+                        result_df = calculate_distances_full(st.session_state.base_df, query_df)
                         st.session_state.result_df = result_df
                     st.success(f"已计算 {len(result_df)} 个查询点")
                 else:
                     st.error("请输入有效的查询数据")
 
-    # ----- Tab 2: 距离查询（上传文件） -----
+    # ----- Tab 2: 文件输入 -----
     with tab2:
-        st.subheader("上传查询文件")
+        st.subheader("文件输入")
+        st.markdown("上传包含一个或多个查询点的Excel文件，批量计算距离")
 
         with st.expander("📋 文件格式要求"):
             st.markdown("""
@@ -299,28 +304,28 @@ def main():
             - **经度**（必填）
             - **纬度**（必填）
             - **名称/备注**（可选，用于标识查询点）
+            
+            示例：
+            | 名称/备注 | 经度 | 纬度 |
+            |----------|------|------|
+            | 查询点1 | 116.504885 | 39.885358 |
+            | 查询点2 | 121.473701 | 31.230416 |
             """)
-            template_data = {
-                '名称/备注': ['示例查询点1', '示例查询点2'],
-                '经度': [116.504885, 121.473701],
-                '纬度': [39.885358, 31.230416]
-            }
-            template_df = pd.DataFrame(template_data)
-            buffer = BytesIO()
-            template_df.to_excel(buffer, index=False)
-            buffer.seek(0)
+            buffer2 = BytesIO()
+            template_df.to_excel(buffer2, index=False)
+            buffer2.seek(0)
             st.download_button(
                 label="📥 下载查询模板",
-                data=buffer,
+                data=buffer2,
                 file_name="query_template.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        uploaded_query = st.file_uploader("上传查询Excel", type=['xlsx', 'xls'], key="query_upload")
+        uploaded_file = st.file_uploader("上传查询Excel文件", type=['xlsx', 'xls'], key="file_upload")
 
-        if uploaded_query:
+        if uploaded_file:
             try:
-                query_df = pd.read_excel(uploaded_query)
+                query_df = pd.read_excel(uploaded_file)
                 required = {'经度', '纬度'}
                 if not required.issubset(set(query_df.columns)):
                     st.error(f"缺少必要列: {required}")
@@ -330,99 +335,14 @@ def main():
 
                     if st.button("🚀 开始计算", type="primary"):
                         if st.session_state.base_df is None:
-                            st.error("请先上传门店基础数据")
+                            st.error("请先加载门店基础数据")
                         else:
                             with st.spinner("计算中..."):
-                                result_df = calculate_distances(st.session_state.base_df, query_df)
+                                result_df = calculate_distances_full(st.session_state.base_df, query_df)
                                 st.session_state.result_df = result_df
-                            st.success("计算完成！")
+                            st.success(f"计算完成！共 {len(result_df)} 条结果")
             except Exception as e:
                 st.error(f"读取失败: {e}")
-
-    # ----- Tab 3: 批量查询 -----
-    with tab3:
-        st.subheader("批量查询")
-        st.markdown("上传包含多个查询点的Excel文件，批量计算距离")
-
-        uploaded_batch = st.file_uploader("上传批量查询Excel", type=['xlsx', 'xls'], key="batch_upload")
-
-        if uploaded_batch:
-            try:
-                batch_df = pd.read_excel(uploaded_batch)
-                st.dataframe(batch_df.head(20), use_container_width=True)
-
-                if st.button("🚀 批量计算", type="primary"):
-                    if st.session_state.base_df is None:
-                        st.error("请先上传门店基础数据")
-                    else:
-                        required = {'经度', '纬度'}
-                        if not required.issubset(set(batch_df.columns)):
-                            st.error(f"缺少必要列: {required}")
-                        else:
-                            with st.spinner("批量计算中..."):
-                                result_df = calculate_distances(st.session_state.base_df, batch_df)
-                                st.session_state.result_df = result_df
-                            st.success(f"批量计算完成，共 {len(result_df)} 条结果")
-            except Exception as e:
-                st.error(f"读取失败: {e}")
-
-    # ----- Tab 4: 新店可行性检查 -----
-    with tab4:
-        st.subheader("🏪 新店选址可行性检查")
-        st.markdown("输入新店经纬度，检查是否符合开店距离要求")
-        st.markdown("""
-        **规则：**
-        - 与最近**独立店**距离需 ≥ **1000米**
-        - 与最近**店中店**距离需 ≥ **500米**
-        """)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            new_lon = st.text_input("新店经度", value="", placeholder="116.504885", key="new_lon")
-        with col2:
-            new_lat = st.text_input("新店纬度", value="", placeholder="39.885358", key="new_lat")
-
-        if st.button("🔍 检查可行性", type="primary"):
-            if st.session_state.base_df is None:
-                st.error("请先上传门店基础数据")
-            elif not new_lon.strip() or not new_lat.strip():
-                st.error("请输入有效的经纬度")
-            else:
-                try:
-                    lon = float(new_lon)
-                    lat = float(new_lat)
-                    with st.spinner("检查中..."):
-                        results = check_store_feasibility(st.session_state.base_df, lat, lon)
-
-                    st.markdown("### 检查结果")
-
-                    all_pass = True
-                    for store_type, data in results.items():
-                        passed = data['通过']
-                        if not passed:
-                            all_pass = False
-
-                        status = "✅ 通过" if passed else "❌ 不通过"
-                        color = "green" if passed else "red"
-
-                        with st.container():
-                            st.markdown(f"**{store_type}** 距离检查: :{color}[{status}]")
-                            if data.get('距离') is not None:
-                                st.write(f"- 最近门店: {data.get('最近门店', '未知')}")
-                                st.write(f"- 实际距离: **{data['距离']:.0f}米**")
-                                st.write(f"- 要求阈值: ≥ **{data['阈值']}米**")
-                                st.write(f"- {data['说明']}")
-                            else:
-                                st.write(f"- {data.get('说明', '无数据')}")
-                            st.divider()
-
-                    if all_pass:
-                        st.success("🎉 **总体结论：通过可行性检查，可以开店！**")
-                    else:
-                        st.warning("⚠️ **总体结论：未通过，请查看具体不通过项**")
-
-                except ValueError:
-                    st.error("经纬度格式错误，请输入有效数字")
 
     # ===== 结果展示 =====
     if 'result_df' in st.session_state and st.session_state.result_df is not None:
@@ -431,28 +351,33 @@ def main():
 
         result_df = st.session_state.result_df
 
-        col1, col2, col3 = st.columns(3)
+        # 统计信息
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("查询点数量", len(result_df))
         with col2:
-            within_500 = len(result_df[result_df['是否小于500米'].str.contains('是')])
-            st.metric("小于500米", within_500)
+            pass_dzd = len(result_df[result_df['店中店≥500m'].str.contains('是')])
+            st.metric("店中店≥500m", pass_dzd)
         with col3:
-            avg_dist = result_df['最小距离(米)'].mean()
-            st.metric("平均距离", f"{avg_dist:.0f}米")
+            pass_dld = len(result_df[result_df['独立店≥1km'].str.contains('是')])
+            st.metric("独立店≥1km", pass_dld)
+        with col4:
+            total_pass = len(result_df[result_df['总体结论'].str.contains('通过')])
+            st.metric("总体通过", total_pass)
 
+        # 结果表格
         st.dataframe(
             result_df,
             use_container_width=True,
             column_config={
                 '查询经度': st.column_config.NumberColumn(format='%.6f'),
                 '查询纬度': st.column_config.NumberColumn(format='%.6f'),
-                '门店经度': st.column_config.NumberColumn(format='%.6f'),
-                '门店纬度': st.column_config.NumberColumn(format='%.6f'),
-                '最小距离(米)': st.column_config.NumberColumn(format='%.2f 米')
+                '店中店距离(米)': st.column_config.NumberColumn(format='%.2f'),
+                '独立店距离(米)': st.column_config.NumberColumn(format='%.2f')
             }
         )
 
+        # 导出
         col1, col2 = st.columns(2)
         with col1:
             buffer = BytesIO()
@@ -461,7 +386,7 @@ def main():
             st.download_button(
                 label="📥 导出Excel结果",
                 data=buffer,
-                file_name="distance_result.xlsx",
+                file_name=f"distance_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         with col2:
@@ -469,7 +394,7 @@ def main():
             st.download_button(
                 label="📥 导出CSV结果",
                 data=csv_buffer,
-                file_name="distance_result.csv",
+                file_name=f"distance_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
 
