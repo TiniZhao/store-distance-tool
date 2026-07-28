@@ -95,16 +95,19 @@ def calculate_distances_full(base_df, query_df):
         # 总体结论
         overall_pass = dzd_pass and dld_pass
         
+        dzd_status = '⚠️ 无数据' if not dzd_dist else ('✅ 是' if dzd_pass else '❌ 否')
+        dld_status = '⚠️ 无数据' if not dld_dist else ('✅ 是' if dld_pass else '❌ 否')
+
         results.append({
             '查询点': q_name,
             '查询经度': q_lon,
             '查询纬度': q_lat,
             '最近店中店': dzd_name,
             '店中店距离(米)': round(dzd_dist, 2) if dzd_dist else None,
-            '店中店≥500m': '✅ 是' if dzd_pass else '❌ 否' if dzd_dist else '⚠️ 无数据',
+            '店中店≥500m': dzd_status,
             '最近独立店': dld_name,
             '独立店距离(米)': round(dld_dist, 2) if dld_dist else None,
-            '独立店≥1km': '✅ 是' if dld_pass else '❌ 否' if dld_dist else '⚠️ 无数据',
+            '独立店≥1km': dld_status,
             '总体结论': '✅ 通过' if overall_pass else '❌ 不通过'
         })
     
@@ -298,28 +301,28 @@ def main():
         st.subheader("文件输入")
         st.markdown("上传包含一个或多个查询点的Excel文件，批量计算距离")
 
-        with st.expander("📋 文件格式要求"):
-            st.markdown("""
-            Excel 文件必须包含以下列：
-            - **经度**（必填）
-            - **纬度**（必填）
-            - **名称/备注**（可选，用于标识查询点）
-            
-            示例：
-            | 名称/备注 | 经度 | 纬度 |
-            |----------|------|------|
-            | 查询点1 | 116.504885 | 39.885358 |
-            | 查询点2 | 121.473701 | 31.230416 |
-            """)
-            buffer2 = BytesIO()
-            template_df.to_excel(buffer2, index=False)
-            buffer2.seek(0)
-            st.download_button(
-                label="📥 下载查询模板",
-                data=buffer2,
-                file_name="query_template.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        st.markdown("**📋 文件格式要求**")
+        st.markdown("""
+        Excel 文件必须包含以下列：
+        - **经度**（必填）
+        - **纬度**（必填）
+        - **名称/备注**（可选，用于标识查询点）
+        
+        示例：
+        | 名称/备注 | 经度 | 纬度 |
+        |----------|------|------|
+        | 查询点1 | 116.504885 | 39.885358 |
+        | 查询点2 | 121.473701 | 31.230416 |
+        """)
+        buffer2 = BytesIO()
+        template_df.to_excel(buffer2, index=False)
+        buffer2.seek(0)
+        st.download_button(
+            label="📥 下载查询模板",
+            data=buffer2,
+            file_name="query_template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
         uploaded_file = st.file_uploader("上传查询Excel文件", type=['xlsx', 'xls'], key="file_upload")
 
@@ -357,27 +360,93 @@ def main():
             st.metric("查询点数量", len(result_df))
         with col2:
             pass_dzd = len(result_df[result_df['店中店≥500m'].str.contains('是')])
-            st.metric("店中店≥500m", pass_dzd)
+            st.metric("店中店≥500m", f"{pass_dzd} / {len(result_df)}")
         with col3:
             pass_dld = len(result_df[result_df['独立店≥1km'].str.contains('是')])
-            st.metric("独立店≥1km", pass_dld)
+            st.metric("独立店≥1km", f"{pass_dld} / {len(result_df)}")
         with col4:
             total_pass = len(result_df[result_df['总体结论'].str.contains('通过')])
-            st.metric("总体通过", total_pass)
+            st.metric("总体通过", f"{total_pass} / {len(result_df)}")
 
-        # 结果表格
-        st.dataframe(
-            result_df,
-            use_container_width=True,
-            column_config={
-                '查询经度': st.column_config.NumberColumn(format='%.6f'),
-                '查询纬度': st.column_config.NumberColumn(format='%.6f'),
-                '店中店距离(米)': st.column_config.NumberColumn(format='%.2f'),
-                '独立店距离(米)': st.column_config.NumberColumn(format='%.2f')
-            }
-        )
+        # 筛选和排序
+        st.markdown("---")
+        filter_col1, filter_col2, filter_col3 = st.columns([2, 2, 2])
+        with filter_col1:
+            status_filter = st.multiselect(
+                "按总体结论筛选",
+                options=['✅ 通过', '❌ 不通过'],
+                default=['✅ 通过', '❌ 不通过']
+            )
+        with filter_col2:
+            sort_by = st.selectbox(
+                "排序方式",
+                options=['默认', '店中店距离升序', '店中店距离降序', '独立店距离升序', '独立店距离降序']
+            )
+        with filter_col3:
+            view_mode = st.radio("展示方式", ["全部结果", "分组展示"], horizontal=True)
+
+        # 应用筛选和排序
+        filtered_df = result_df[result_df['总体结论'].isin(status_filter)] if status_filter else result_df
+        
+        if sort_by == '店中店距离升序':
+            filtered_df = filtered_df.sort_values('店中店距离(米)', ascending=True, na_position='last')
+        elif sort_by == '店中店距离降序':
+            filtered_df = filtered_df.sort_values('店中店距离(米)', ascending=False, na_position='last')
+        elif sort_by == '独立店距离升序':
+            filtered_df = filtered_df.sort_values('独立店距离(米)', ascending=True, na_position='last')
+        elif sort_by == '独立店距离降序':
+            filtered_df = filtered_df.sort_values('独立店距离(米)', ascending=False, na_position='last')
+
+        # 结果展示
+        if view_mode == "分组展示":
+            passed = filtered_df[filtered_df['总体结论'].str.contains('通过')]
+            failed = filtered_df[~filtered_df['总体结论'].str.contains('通过')]
+            
+            tab_pass, tab_fail = st.tabs([f"✅ 通过 ({len(passed)})", f"❌ 不通过 ({len(failed)})"])
+            
+            with tab_pass:
+                if len(passed) > 0:
+                    st.dataframe(
+                        passed,
+                        use_container_width=True,
+                        column_config={
+                            '查询经度': st.column_config.NumberColumn(format='%.6f'),
+                            '查询纬度': st.column_config.NumberColumn(format='%.6f'),
+                            '店中店距离(米)': st.column_config.NumberColumn(format='%.2f'),
+                            '独立店距离(米)': st.column_config.NumberColumn(format='%.2f')
+                        }
+                    )
+                else:
+                    st.info("无通过的查询点")
+            
+            with tab_fail:
+                if len(failed) > 0:
+                    st.dataframe(
+                        failed,
+                        use_container_width=True,
+                        column_config={
+                            '查询经度': st.column_config.NumberColumn(format='%.6f'),
+                            '查询纬度': st.column_config.NumberColumn(format='%.6f'),
+                            '店中店距离(米)': st.column_config.NumberColumn(format='%.2f'),
+                            '独立店距离(米)': st.column_config.NumberColumn(format='%.2f')
+                        }
+                    )
+                else:
+                    st.info("无不通过的查询点")
+        else:
+            st.dataframe(
+                filtered_df,
+                use_container_width=True,
+                column_config={
+                    '查询经度': st.column_config.NumberColumn(format='%.6f'),
+                    '查询纬度': st.column_config.NumberColumn(format='%.6f'),
+                    '店中店距离(米)': st.column_config.NumberColumn(format='%.2f'),
+                    '独立店距离(米)': st.column_config.NumberColumn(format='%.2f')
+                }
+            )
 
         # 导出
+        st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
             buffer = BytesIO()
