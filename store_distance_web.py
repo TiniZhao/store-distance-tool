@@ -62,7 +62,9 @@ def calculate_distances_full(base_df, query_df):
     for _, q_row in query_df.iterrows():
         q_lat = q_row['纬度']
         q_lon = q_row['经度']
-        q_name = q_row.get('名称/备注', f"查询点{len(results)+1}")
+        # 支持多种名称列：名称/备注、门店名称、名称
+        q_name = (q_row.get('名称/备注') or q_row.get('门店名称') 
+                  or q_row.get('名称') or f"查询点{len(results)+1}")
 
         # 店中店检查
         dzd_dist = float('inf')
@@ -73,10 +75,10 @@ def calculate_distances_full(base_df, query_df):
                 dzd_dist = dist
                 dzd_name = s_row['门店名称']
         
-        dzd_pass = dzd_dist >= 500 if len(dianzhongdian) > 0 else True
         if len(dianzhongdian) == 0:
-            dzd_dist = None
-            dzd_name = '无店中店数据'
+            dzd_name = '无店中店'
+            dzd_dist = 0
+        dzd_pass = dzd_dist >= 500
 
         # 独立店检查
         dld_dist = float('inf')
@@ -87,27 +89,23 @@ def calculate_distances_full(base_df, query_df):
                 dld_dist = dist
                 dld_name = s_row['门店名称']
         
-        dld_pass = dld_dist >= 1000 if len(dulidian) > 0 else True
         if len(dulidian) == 0:
-            dld_dist = None
-            dld_name = '无独立店数据'
+            dld_name = '无独立店'
+            dld_dist = 0
+        dld_pass = dld_dist >= 1000
 
-        # 总体结论
         overall_pass = dzd_pass and dld_pass
-        
-        dzd_status = '⚠️ 无数据' if not dzd_dist else ('✅ 是' if dzd_pass else '❌ 否')
-        dld_status = '⚠️ 无数据' if not dld_dist else ('✅ 是' if dld_pass else '❌ 否')
 
         results.append({
             '查询点': q_name,
             '查询经度': q_lon,
             '查询纬度': q_lat,
             '最近店中店': dzd_name,
-            '店中店距离(米)': round(dzd_dist, 2) if dzd_dist else None,
-            '店中店≥500m': dzd_status,
+            '店中店距离(米)': round(dzd_dist, 2),
+            '店中店≥500m': '✅ 是' if dzd_pass else '❌ 否',
             '最近独立店': dld_name,
-            '独立店距离(米)': round(dld_dist, 2) if dld_dist else None,
-            '独立店≥1km': dld_status,
+            '独立店距离(米)': round(dld_dist, 2),
+            '独立店≥1km': '✅ 是' if dld_pass else '❌ 否',
             '总体结论': '✅ 通过' if overall_pass else '❌ 不通过'
         })
     
@@ -334,7 +332,7 @@ def main():
                     st.error(f"缺少必要列: {required}")
                 else:
                     st.info(f"已加载 {len(query_df)} 个查询点")
-                    st.dataframe(query_df.head(10), use_container_width=True)
+                    st.dataframe(query_df, use_container_width=True, height=300)
 
                     if st.button("🚀 开始计算", type="primary"):
                         if st.session_state.base_df is None:
@@ -359,13 +357,13 @@ def main():
         with col1:
             st.metric("查询点数量", len(result_df))
         with col2:
-            pass_dzd = len(result_df[result_df['店中店≥500m'].str.contains('是')])
+            pass_dzd = len(result_df[result_df['店中店≥500m'] == '✅ 是'])
             st.metric("店中店≥500m", f"{pass_dzd} / {len(result_df)}")
         with col3:
-            pass_dld = len(result_df[result_df['独立店≥1km'].str.contains('是')])
+            pass_dld = len(result_df[result_df['独立店≥1km'] == '✅ 是'])
             st.metric("独立店≥1km", f"{pass_dld} / {len(result_df)}")
         with col4:
-            total_pass = len(result_df[result_df['总体结论'].str.contains('通过')])
+            total_pass = len(result_df[result_df['总体结论'] == '✅ 通过'])
             st.metric("总体通过", f"{total_pass} / {len(result_df)}")
 
         # 筛选和排序
@@ -399,8 +397,8 @@ def main():
 
         # 结果展示
         if view_mode == "分组展示":
-            passed = filtered_df[filtered_df['总体结论'].str.contains('通过')]
-            failed = filtered_df[~filtered_df['总体结论'].str.contains('通过')]
+            passed = filtered_df[filtered_df['总体结论'] == '✅ 通过']
+            failed = filtered_df[filtered_df['总体结论'] == '❌ 不通过']
             
             tab_pass, tab_fail = st.tabs([f"✅ 通过 ({len(passed)})", f"❌ 不通过 ({len(failed)})"])
             
