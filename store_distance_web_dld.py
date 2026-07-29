@@ -69,29 +69,35 @@ def calculate_distances_full(base_df, query_df):
         # 店中店检查（独立店场景：≥1km）
         dzd_dist = float('inf')
         dzd_name = None
+        dzd_province = None
         for _, s_row in dianzhongdian.iterrows():
             dist = haversine_distance(q_lat, q_lon, s_row['纬度'], s_row['经度'])
             if dist < dzd_dist:
                 dzd_dist = dist
                 dzd_name = s_row['门店名称']
+                dzd_province = s_row.get('省份', '')
         
         if len(dianzhongdian) == 0:
             dzd_name = '无店中店'
             dzd_dist = 0
+            dzd_province = '-'
         dzd_pass = dzd_dist >= 1000
 
         # 独立店检查（独立店场景：≥1km）
         dld_dist = float('inf')
         dld_name = None
+        dld_province = None
         for _, s_row in dulidian.iterrows():
             dist = haversine_distance(q_lat, q_lon, s_row['纬度'], s_row['经度'])
             if dist < dld_dist:
                 dld_dist = dist
                 dld_name = s_row['门店名称']
+                dld_province = s_row.get('省份', '')
         
         if len(dulidian) == 0:
             dld_name = '无独立店'
             dld_dist = 0
+            dld_province = '-'
         dld_pass = dld_dist >= 1000
 
         overall_pass = dzd_pass and dld_pass
@@ -100,9 +106,11 @@ def calculate_distances_full(base_df, query_df):
             '查询点': q_name,
             '查询经度': q_lon,
             '查询纬度': q_lat,
+            '店中店省份': dzd_province or '-',
             '最近店中店': dzd_name,
             '店中店距离(米)': round(dzd_dist, 2),
             '店中店≥1km': '✅ 是' if dzd_pass else '❌ 否',
+            '独立店省份': dld_province or '-',
             '最近独立店': dld_name,
             '独立店距离(米)': round(dld_dist, 2),
             '独立店≥1km': '✅ 是' if dld_pass else '❌ 否',
@@ -110,6 +118,16 @@ def calculate_distances_full(base_df, query_df):
         })
     
     return pd.DataFrame(results)
+
+def style_result_df(df):
+    """生成居中对齐的HTML表格"""
+    styled = df.style.set_properties(**{
+        'text-align': 'center'
+    }).set_table_styles([
+        {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6'), ('font-weight', 'bold')]},
+        {'selector': 'td', 'props': [('text-align', 'center')]},
+    ])
+    return styled.to_html(index=False)
 
 # ========== 主应用 ==========
 def main():
@@ -209,6 +227,37 @@ def main():
 
         st.divider()
         
+        # 使用说明
+        with st.expander("📖 使用说明"):
+            st.markdown("""
+            **【工具用途】**
+            用于计算查询点与现有门店之间的直线距离，判断是否符合开店距离要求。
+            
+            **【两种查询方式】**
+            1. **手动输入**：适合查询单个或少量点
+               - 填入名称、经度、纬度即可
+               - 支持批量粘贴，需要按照格式进行粘贴
+               - 输入后点击 ▶ 开始计算 按钮可得到计算结果
+            
+            2. **文件输入**：适合批量查询
+               - 已提供模板表格，下载填写后上传
+               - 支持一次查询任意多个点
+               - 表格输入后自动计算结果
+            
+            **【结果解读】**
+            - 最近店中店/独立店：距离查询点最近的门店名称
+            - 距离：使用 Haversine 公式计算的球面直线距离
+            - ≥1km：判断是否符合开店距离要求
+            - 总体结论：两个条件都满足才显示"通过"
+            
+            **【数据说明】**
+            - 门店数据由管理员统一维护
+            - 普通用户仅可查看，不可修改
+            - 公司总部店已自动过滤，不参与计算
+            """)
+        
+        st.divider()
+        
         # 下载模板（直接显示按钮）
         st.markdown("**下载查询模板**")
         template_data = {
@@ -234,65 +283,69 @@ def main():
     with tab1:
         st.subheader("手动输入经纬度")
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            input_name = st.text_input("名称/备注", value="查询点1")
-        with col2:
-            input_lon = st.text_input("经度", value="", placeholder="116.504885")
-        with col3:
-            input_lat = st.text_input("纬度", value="", placeholder="39.885358")
+        with st.container(border=True):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                input_name = st.text_input("名称/备注", value="", placeholder="选填")
+            with col2:
+                input_lon = st.text_input("经度", value="", placeholder="示例：116.504885（保留6位小数）")
+            with col3:
+                input_lat = st.text_input("纬度", value="", placeholder="示例：39.885358（保留6位小数）")
 
-        st.markdown("---")
-        st.markdown("**或批量输入**（支持两种格式）")
-        st.caption("格式1: 名称, 经度, 纬度　｜　格式2: 经度, 纬度（自动命名）")
-        batch_input = st.text_area(
-            "批量输入",
-            placeholder="名称1, 116.504885, 39.885358\n116.40, 39.90\n名称3, 121.50, 31.20",
-            height=120
-        )
+            st.markdown("**或批量输入**（支持两种格式）")
+            st.caption("格式1: 名称, 经度, 纬度　｜　格式2: 经度, 纬度（自动命名）")
+            batch_input = st.text_area(
+                "批量输入",
+                placeholder="名称1, 116.504885, 39.885358\n116.40, 39.90\n名称3, 121.50, 31.20",
+                height=120,
+                label_visibility="collapsed"
+            )
 
-        if st.button("🔍 计算手动输入", type="primary"):
-            if st.session_state.base_df is None:
-                st.error("请先加载门店基础数据")
-            else:
-                query_data = []
-                if input_lon.strip() and input_lat.strip():
-                    try:
-                        lon = float(input_lon)
-                        lat = float(input_lat)
-                        query_data.append({'名称/备注': input_name, '经度': lon, '纬度': lat})
-                    except ValueError:
-                        st.warning("单个输入的经纬度格式不正确，已跳过")
-
-                if batch_input.strip():
-                    for i, line in enumerate(batch_input.strip().split('\n'), 1):
-                        parts = [p.strip() for p in line.split(',')]
-                        try:
-                            if len(parts) == 3:
-                                query_data.append({
-                                    '名称/备注': parts[0],
-                                    '经度': float(parts[1]),
-                                    '纬度': float(parts[2])
-                                })
-                            elif len(parts) == 2:
-                                query_data.append({
-                                    '名称/备注': f'查询点{len(query_data)+1}',
-                                    '经度': float(parts[0]),
-                                    '纬度': float(parts[1])
-                                })
-                            else:
-                                st.warning(f"第{i}行格式错误: {line}")
-                        except ValueError:
-                            st.warning(f"第{i}行经纬度格式错误: {line}")
-
-                if query_data:
-                    query_df = pd.DataFrame(query_data)
-                    with st.spinner("计算中..."):
-                        result_df = calculate_distances_full(st.session_state.base_df, query_df)
-                        st.session_state.result_df = result_df
-                    st.success(f"已计算 {len(result_df)} 个查询点")
+        _, btn_col = st.columns([5, 1])
+        with btn_col:
+            if st.button("▶ 开始计算", type="primary", use_container_width=True):
+                if st.session_state.base_df is None:
+                    st.error("请先加载门店基础数据")
                 else:
-                    st.error("请输入有效的查询数据")
+                    query_data = []
+                    if input_lon.strip() and input_lat.strip():
+                        try:
+                            lon = float(input_lon)
+                            lat = float(input_lat)
+                            query_data.append({'名称/备注': input_name or '查询点1', '经度': lon, '纬度': lat})
+                        except ValueError:
+                            st.warning("单个输入的经纬度格式不正确，已跳过")
+
+                    if batch_input.strip():
+                        for i, line in enumerate(batch_input.strip().split('\n'), 1):
+                            parts = [p.strip() for p in line.split(',')]
+                            try:
+                                if len(parts) == 3:
+                                    query_data.append({
+                                        '名称/备注': parts[0],
+                                        '经度': float(parts[1]),
+                                        '纬度': float(parts[2])
+                                    })
+                                elif len(parts) == 2:
+                                    query_data.append({
+                                        '名称/备注': f'查询点{len(query_data)+1}',
+                                        '经度': float(parts[0]),
+                                        '纬度': float(parts[1])
+                                    })
+                                else:
+                                    st.warning(f"第{i}行格式错误: {line}")
+                            except ValueError:
+                                st.warning(f"第{i}行经纬度格式错误: {line}")
+
+                    if query_data:
+                        query_df = pd.DataFrame(query_data)
+                        with st.spinner("计算中..."):
+                            result_df = calculate_distances_full(st.session_state.base_df, query_df)
+                            st.session_state.result_df = result_df
+                        st.success(f"已计算 {len(result_df)} 个查询点")
+                    else:
+                        st.error("请输入有效的查询数据")
+        st.caption("点击按钮计算距离结果")
 
     # ----- Tab 2: 文件输入 -----
     with tab2:
@@ -322,7 +375,7 @@ def main():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        uploaded_file = st.file_uploader("上传查询Excel文件", type=['xlsx', 'xls'], key="file_upload")
+        uploaded_file = st.file_uploader("点击上传文件", type=['xlsx', 'xls'], key="file_upload")
 
         if uploaded_file:
             try:
@@ -334,14 +387,17 @@ def main():
                     st.info(f"已加载 {len(query_df)} 个查询点")
                     st.dataframe(query_df, use_container_width=True, height=300)
 
-                    if st.button("🚀 开始计算", type="primary"):
-                        if st.session_state.base_df is None:
-                            st.error("请先加载门店基础数据")
-                        else:
-                            with st.spinner("计算中..."):
-                                result_df = calculate_distances_full(st.session_state.base_df, query_df)
-                                st.session_state.result_df = result_df
-                            st.success(f"计算完成！共 {len(result_df)} 条结果")
+                    _, btn_col2 = st.columns([5, 1])
+                    with btn_col2:
+                        if st.button("🚀 开始计算", type="primary", use_container_width=True):
+                            if st.session_state.base_df is None:
+                                st.error("请先加载门店基础数据")
+                            else:
+                                with st.spinner("计算中..."):
+                                    result_df = calculate_distances_full(st.session_state.base_df, query_df)
+                                    st.session_state.result_df = result_df
+                                st.success(f"计算完成！共 {len(result_df)} 条结果")
+                    st.caption("点击按钮计算距离结果")
             except Exception as e:
                 st.error(f"读取失败: {e}")
 
@@ -396,6 +452,7 @@ def main():
             filtered_df = filtered_df.sort_values('独立店距离(米)', ascending=False, na_position='last')
 
         # 结果展示
+        st.subheader("📋 详细结果")
         if view_mode == "分组展示":
             passed = filtered_df[filtered_df['总体结论'] == '✅ 通过']
             failed = filtered_df[filtered_df['总体结论'] == '❌ 不通过']
@@ -404,44 +461,17 @@ def main():
             
             with tab_pass:
                 if len(passed) > 0:
-                    st.dataframe(
-                        passed,
-                        use_container_width=True,
-                        column_config={
-                            '查询经度': st.column_config.NumberColumn(format='%.6f'),
-                            '查询纬度': st.column_config.NumberColumn(format='%.6f'),
-                            '店中店距离(米)': st.column_config.NumberColumn(format='%.2f'),
-                            '独立店距离(米)': st.column_config.NumberColumn(format='%.2f')
-                        }
-                    )
+                    st.write(style_result_df(passed), unsafe_allow_html=True)
                 else:
                     st.info("无通过的查询点")
             
             with tab_fail:
                 if len(failed) > 0:
-                    st.dataframe(
-                        failed,
-                        use_container_width=True,
-                        column_config={
-                            '查询经度': st.column_config.NumberColumn(format='%.6f'),
-                            '查询纬度': st.column_config.NumberColumn(format='%.6f'),
-                            '店中店距离(米)': st.column_config.NumberColumn(format='%.2f'),
-                            '独立店距离(米)': st.column_config.NumberColumn(format='%.2f')
-                        }
-                    )
+                    st.write(style_result_df(failed), unsafe_allow_html=True)
                 else:
                     st.info("无不通过的查询点")
         else:
-            st.dataframe(
-                filtered_df,
-                use_container_width=True,
-                column_config={
-                    '查询经度': st.column_config.NumberColumn(format='%.6f'),
-                    '查询纬度': st.column_config.NumberColumn(format='%.6f'),
-                    '店中店距离(米)': st.column_config.NumberColumn(format='%.2f'),
-                    '独立店距离(米)': st.column_config.NumberColumn(format='%.2f')
-                }
-            )
+            st.write(style_result_df(filtered_df), unsafe_allow_html=True)
 
         # 导出
         st.markdown("---")
