@@ -258,13 +258,19 @@ def main():
 
         # 使用说明（不折叠）
         st.markdown("""
-        <div style='font-size: 0.9em; color: #666;'>
-        <b>📖 使用说明</b><br>
+        <div style='color: #666; line-height: 1.6;'>
+        <b>使用说明</b><br><br>
         <b>【工具用途】</b><br>
         用于计算查询点与现有门店之间的直线距离，判断是否符合开店距离要求。<br><br>
         <b>【两种查询方式】</b><br>
-        1. <b>手动输入</b>：适合查询单个或少量点，填入名称、经度、纬度即可，支持批量粘贴，输入后点击 🚀 开始计算 按钮可得到计算结果<br>
-        2. <b>文件输入</b>：适合批量查询，已提供模板表格，下载填写后上传，支持一次查询任意多个点，表格输入后自动计算结果<br><br>
+        1. 手动输入：适合查询单个或少量点<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- 填入名称、经度、纬度即可<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- 支持批量粘贴，需要按照格式进行粘贴<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- 输入后点击 🚀 开始计算 按钮可得到计算结果<br><br>
+        2. 文件输入：适合批量查询<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- 已提供模板表格，下载填写后上传<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- 支持一次查询任意多个点<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;- 表格输入后点击 🚀 开始计算 按钮可得到计算结果<br><br>
         <b>【结果解读】</b><br>
         - 最近店中店/独立店：距离查询点最近的门店名称<br>
         - 距离：使用 Haversine 公式计算的球面直线距离<br>
@@ -272,8 +278,7 @@ def main():
         - 总体结论：两个条件都满足才显示"通过"<br><br>
         <b>【数据说明】</b><br>
         - 门店数据由管理员统一维护<br>
-        - 普通用户仅可查看，不可修改<br>
-        - 公司总部店已自动过滤，不参与计算
+        - 普通用户仅可查看，不可修改
         </div>
         """, unsafe_allow_html=True)
 
@@ -302,21 +307,10 @@ def main():
                 label_visibility="collapsed"
             )
 
-        _, right_col = st.columns([7, 1.2])
-        with right_col:
-            # 外层容器：右对齐 + 固定按钮宽度160px
-            st.markdown("""
-            <div style="display: flex; flex-direction: column; align-items: flex-end;">
-                <div style="width: 160px;">
-            """, unsafe_allow_html=True)
-            btn_clicked = st.button("🚀 开始计算", type="primary", use_container_width=True, key="manual_calc")
-            st.markdown("""
-                </div>
-                <div style="margin-top: 6px; text-align: right; font-size: 0.85em; color: #999;">
-                    点击按钮计算距离结果
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        left_spacer, right_btn_area = st.columns([5, 1])
+        with right_btn_area:
+            btn_clicked = st.button("🚀 开始计算", type="primary", key="manual_calc")
+            st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 6px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
         
         if btn_clicked:
             if st.session_state.base_df is None:
@@ -401,20 +395,10 @@ def main():
                     st.info(f"已加载 {len(query_df)} 个查询点")
                     st.dataframe(query_df, use_container_width=True, height=300)
 
-                    _, right_col2 = st.columns([7, 1.2])
-                    with right_col2:
-                        st.markdown("""
-                        <div style="display: flex; flex-direction: column; align-items: flex-end;">
-                            <div style="width: 160px;">
-                        """, unsafe_allow_html=True)
-                        btn2_clicked = st.button("🚀 开始计算", type="primary", use_container_width=True, key="file_calc")
-                        st.markdown("""
-                            </div>
-                            <div style="margin-top: 6px; text-align: right; font-size: 0.85em; color: #999;">
-                                点击按钮计算距离结果
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    left_spacer, right_btn_area = st.columns([5, 1])
+                    with right_btn_area:
+                        btn2_clicked = st.button("🚀 开始计算", type="primary", key="file_calc")
+                        st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 6px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
                     
                     if btn2_clicked:
                         if st.session_state.base_df is None:
