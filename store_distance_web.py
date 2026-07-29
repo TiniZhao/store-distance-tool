@@ -7,7 +7,7 @@ from datetime import datetime
 
 # ========== 配置 ==========
 st.set_page_config(
-    page_title="门店距离查询工具",
+    page_title="门店距离查询工具-店中店",
     page_icon="📍",
     layout="wide"
 )
@@ -113,7 +113,7 @@ def calculate_distances_full(base_df, query_df):
 
 # ========== 主应用 ==========
 def main():
-    st.title("📍 门店距离查询工具")
+    st.title("📍 门店距离查询工具-店中店")
     st.markdown("计算查询点与门店之间的直线距离，判断是否符合开店距离要求")
     st.caption("规则：与店中店距离需 ≥ 500米，与独立店距离需 ≥ 1000米")
 
