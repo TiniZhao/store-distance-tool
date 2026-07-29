@@ -120,12 +120,21 @@ def calculate_distances_full(base_df, query_df):
     return pd.DataFrame(results)
 
 def style_result_df(df):
-    """生成居中对齐的HTML表格"""
-    styled = df.style.set_properties(**{
-        'text-align': 'center'
+    """生成居中对齐的HTML表格，并格式化距离为两位小数"""
+    display_df = df.copy()
+    for col in ['店中店距离(米)', '独立店距离(米)']:
+        if col in display_df.columns:
+            display_df[col] = display_df[col].apply(lambda x: f"{x:.2f}")
+    for col in ['查询经度', '查询纬度']:
+        if col in display_df.columns:
+            display_df[col] = display_df[col].apply(lambda x: f"{x:.6f}")
+    
+    styled = display_df.style.set_properties(**{
+        'text-align': 'center',
+        'white-space': 'nowrap'
     }).set_table_styles([
         {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6'), ('font-weight', 'bold')]},
-        {'selector': 'td', 'props': [('text-align', 'center')]},
+        {'selector': 'td', 'props': [('text-align', 'center'), ('white-space', 'nowrap')]},
     ])
     return styled.to_html(index=False)
 
@@ -227,37 +236,6 @@ def main():
 
         st.divider()
         
-        # 使用说明
-        with st.expander("📖 使用说明"):
-            st.markdown("""
-            **【工具用途】**
-            用于计算查询点与现有门店之间的直线距离，判断是否符合开店距离要求。
-            
-            **【两种查询方式】**
-            1. **手动输入**：适合查询单个或少量点
-               - 填入名称、经度、纬度即可
-               - 支持批量粘贴，需要按照格式进行粘贴
-               - 输入后点击 ▶ 开始计算 按钮可得到计算结果
-            
-            2. **文件输入**：适合批量查询
-               - 已提供模板表格，下载填写后上传
-               - 支持一次查询任意多个点
-               - 表格输入后自动计算结果
-            
-            **【结果解读】**
-            - 最近店中店/独立店：距离查询点最近的门店名称
-            - 距离：使用 Haversine 公式计算的球面直线距离
-            - ≥500m / ≥1km：判断是否符合开店距离要求
-            - 总体结论：两个条件都满足才显示"通过"
-            
-            **【数据说明】**
-            - 门店数据由管理员统一维护
-            - 普通用户仅可查看，不可修改
-            - 公司总部店已自动过滤，不参与计算
-            """)
-        
-        st.divider()
-        
         # 下载模板（直接显示按钮）
         st.markdown("**下载查询模板**")
         template_data = {
@@ -275,6 +253,29 @@ def main():
             file_name="query_template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        st.divider()
+
+        # 使用说明（不折叠）
+        st.markdown("""
+        <div style='font-size: 0.9em; color: #666;'>
+        <b>📖 使用说明</b><br>
+        <b>【工具用途】</b><br>
+        用于计算查询点与现有门店之间的直线距离，判断是否符合开店距离要求。<br><br>
+        <b>【两种查询方式】</b><br>
+        1. <b>手动输入</b>：适合查询单个或少量点，填入名称、经度、纬度即可，支持批量粘贴，输入后点击 🚀 开始计算 按钮可得到计算结果<br>
+        2. <b>文件输入</b>：适合批量查询，已提供模板表格，下载填写后上传，支持一次查询任意多个点，表格输入后自动计算结果<br><br>
+        <b>【结果解读】</b><br>
+        - 最近店中店/独立店：距离查询点最近的门店名称<br>
+        - 距离：使用 Haversine 公式计算的球面直线距离<br>
+        - ≥500m / ≥1km：判断是否符合开店距离要求<br>
+        - 总体结论：两个条件都满足才显示"通过"<br><br>
+        <b>【数据说明】</b><br>
+        - 门店数据由管理员统一维护<br>
+        - 普通用户仅可查看，不可修改<br>
+        - 公司总部店已自动过滤，不参与计算
+        </div>
+        """, unsafe_allow_html=True)
 
     # ===== 主区域 =====
     tab1, tab2 = st.tabs(["✏️ 手动输入", "📁 文件输入"])
@@ -301,9 +302,9 @@ def main():
                 label_visibility="collapsed"
             )
 
-        _, btn_col = st.columns([5, 1])
+        _, _, btn_col = st.columns([3, 3, 2])
         with btn_col:
-            if st.button("▶ 开始计算", type="primary", use_container_width=True):
+            if st.button("🚀 开始计算", type="primary", use_container_width=True):
                 if st.session_state.base_df is None:
                     st.error("请先加载门店基础数据")
                 else:
@@ -375,7 +376,7 @@ def main():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        uploaded_file = st.file_uploader("点击上传文件", type=['xlsx', 'xls'], key="file_upload")
+        uploaded_file = st.file_uploader("上传查询Excel文件", type=['xlsx', 'xls'], key="file_upload", label_visibility="visible")
 
         if uploaded_file:
             try:
@@ -387,7 +388,7 @@ def main():
                     st.info(f"已加载 {len(query_df)} 个查询点")
                     st.dataframe(query_df, use_container_width=True, height=300)
 
-                    _, btn_col2 = st.columns([5, 1])
+                    _, _, btn_col2 = st.columns([3, 3, 2])
                     with btn_col2:
                         if st.button("🚀 开始计算", type="primary", use_container_width=True):
                             if st.session_state.base_df is None:
