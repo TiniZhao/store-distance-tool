@@ -258,8 +258,9 @@ def main():
 
         # 使用说明（不折叠）
         st.markdown("""
-        <div style='color: #666; line-height: 1.6;'>
-        <b>使用说明</b><br><br>
+        <div style='line-height: 1.6;'>
+        <div style='font-size: 1.1em; font-weight: bold; margin-bottom: 8px;'>使用说明</div>
+        <div style='font-size: 0.85em; color: #666;'>
         <b>【工具用途】</b><br>
         用于计算查询点与现有门店之间的直线距离，判断是否符合开店距离要求。<br><br>
         <b>【两种查询方式】</b><br>
@@ -279,6 +280,7 @@ def main():
         <b>【数据说明】</b><br>
         - 门店数据由管理员统一维护<br>
         - 普通用户仅可查看，不可修改
+        </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -307,10 +309,11 @@ def main():
                 label_visibility="collapsed"
             )
 
-        left_spacer, right_btn_area = st.columns([5, 1])
-        with right_btn_area:
+        _, hint_col, btn_col = st.columns([4, 1.2, 0.8])
+        with hint_col:
+            st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
+        with btn_col:
             btn_clicked = st.button("🚀 开始计算", type="primary", key="manual_calc")
-            st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 6px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
         
         if btn_clicked:
             if st.session_state.base_df is None:
@@ -395,10 +398,11 @@ def main():
                     st.info(f"已加载 {len(query_df)} 个查询点")
                     st.dataframe(query_df, use_container_width=True, height=300)
 
-                    left_spacer, right_btn_area = st.columns([5, 1])
-                    with right_btn_area:
+                    _, hint_col, btn_col = st.columns([4, 1.2, 0.8])
+                    with hint_col:
+                        st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
+                    with btn_col:
                         btn2_clicked = st.button("🚀 开始计算", type="primary", key="file_calc")
-                        st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 6px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
                     
                     if btn2_clicked:
                         if st.session_state.base_df is None:
