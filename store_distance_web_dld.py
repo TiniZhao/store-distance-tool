@@ -302,51 +302,64 @@ def main():
                 label_visibility="collapsed"
             )
 
-        _, _, btn_col = st.columns([3, 3, 2])
-        with btn_col:
-            if st.button("🚀 开始计算", type="primary", use_container_width=True):
-                if st.session_state.base_df is None:
-                    st.error("请先加载门店基础数据")
-                else:
-                    query_data = []
-                    if input_lon.strip() and input_lat.strip():
+        _, right_col = st.columns([7, 1.2])
+        with right_col:
+            # 外层容器：右对齐 + 固定按钮宽度160px
+            st.markdown("""
+            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                <div style="width: 160px;">
+            """, unsafe_allow_html=True)
+            btn_clicked = st.button("🚀 开始计算", type="primary", use_container_width=True, key="manual_calc")
+            st.markdown("""
+                </div>
+                <div style="margin-top: 6px; text-align: right; font-size: 0.85em; color: #999;">
+                    点击按钮计算距离结果
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        if btn_clicked:
+            if st.session_state.base_df is None:
+                st.error("请先加载门店基础数据")
+            else:
+                query_data = []
+                if input_lon.strip() and input_lat.strip():
+                    try:
+                        lon = float(input_lon)
+                        lat = float(input_lat)
+                        query_data.append({'名称/备注': input_name or '查询点1', '经度': lon, '纬度': lat})
+                    except ValueError:
+                        st.warning("单个输入的经纬度格式不正确，已跳过")
+
+                if batch_input.strip():
+                    for i, line in enumerate(batch_input.strip().split('\n'), 1):
+                        parts = [p.strip() for p in line.split(',')]
                         try:
-                            lon = float(input_lon)
-                            lat = float(input_lat)
-                            query_data.append({'名称/备注': input_name or '查询点1', '经度': lon, '纬度': lat})
+                            if len(parts) == 3:
+                                query_data.append({
+                                    '名称/备注': parts[0],
+                                    '经度': float(parts[1]),
+                                    '纬度': float(parts[2])
+                                })
+                            elif len(parts) == 2:
+                                query_data.append({
+                                    '名称/备注': f'查询点{len(query_data)+1}',
+                                    '经度': float(parts[0]),
+                                    '纬度': float(parts[1])
+                                })
+                            else:
+                                st.warning(f"第{i}行格式错误: {line}")
                         except ValueError:
-                            st.warning("单个输入的经纬度格式不正确，已跳过")
+                            st.warning(f"第{i}行经纬度格式错误: {line}")
 
-                    if batch_input.strip():
-                        for i, line in enumerate(batch_input.strip().split('\n'), 1):
-                            parts = [p.strip() for p in line.split(',')]
-                            try:
-                                if len(parts) == 3:
-                                    query_data.append({
-                                        '名称/备注': parts[0],
-                                        '经度': float(parts[1]),
-                                        '纬度': float(parts[2])
-                                    })
-                                elif len(parts) == 2:
-                                    query_data.append({
-                                        '名称/备注': f'查询点{len(query_data)+1}',
-                                        '经度': float(parts[0]),
-                                        '纬度': float(parts[1])
-                                    })
-                                else:
-                                    st.warning(f"第{i}行格式错误: {line}")
-                            except ValueError:
-                                st.warning(f"第{i}行经纬度格式错误: {line}")
-
-                    if query_data:
-                        query_df = pd.DataFrame(query_data)
-                        with st.spinner("计算中..."):
-                            result_df = calculate_distances_full(st.session_state.base_df, query_df)
-                            st.session_state.result_df = result_df
-                        st.success(f"已计算 {len(result_df)} 个查询点")
-                    else:
-                        st.error("请输入有效的查询数据")
-        st.caption("点击按钮计算距离结果")
+                if query_data:
+                    query_df = pd.DataFrame(query_data)
+                    with st.spinner("计算中..."):
+                        result_df = calculate_distances_full(st.session_state.base_df, query_df)
+                        st.session_state.result_df = result_df
+                    st.success(f"已计算 {len(result_df)} 个查询点")
+                else:
+                    st.error("请输入有效的查询数据")
 
     # ----- Tab 2: 文件输入 -----
     with tab2:
@@ -388,17 +401,29 @@ def main():
                     st.info(f"已加载 {len(query_df)} 个查询点")
                     st.dataframe(query_df, use_container_width=True, height=300)
 
-                    _, _, btn_col2 = st.columns([3, 3, 2])
-                    with btn_col2:
-                        if st.button("🚀 开始计算", type="primary", use_container_width=True):
-                            if st.session_state.base_df is None:
-                                st.error("请先加载门店基础数据")
-                            else:
-                                with st.spinner("计算中..."):
-                                    result_df = calculate_distances_full(st.session_state.base_df, query_df)
-                                    st.session_state.result_df = result_df
-                                st.success(f"计算完成！共 {len(result_df)} 条结果")
-                    st.caption("点击按钮计算距离结果")
+                    _, right_col2 = st.columns([7, 1.2])
+                    with right_col2:
+                        st.markdown("""
+                        <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                            <div style="width: 160px;">
+                        """, unsafe_allow_html=True)
+                        btn2_clicked = st.button("🚀 开始计算", type="primary", use_container_width=True, key="file_calc")
+                        st.markdown("""
+                            </div>
+                            <div style="margin-top: 6px; text-align: right; font-size: 0.85em; color: #999;">
+                                点击按钮计算距离结果
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    if btn2_clicked:
+                        if st.session_state.base_df is None:
+                            st.error("请先加载门店基础数据")
+                        else:
+                            with st.spinner("计算中..."):
+                                result_df = calculate_distances_full(st.session_state.base_df, query_df)
+                                st.session_state.result_df = result_df
+                            st.success(f"计算完成！共 {len(result_df)} 条结果")
             except Exception as e:
                 st.error(f"读取失败: {e}")
 
