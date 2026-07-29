@@ -311,7 +311,7 @@ def main():
 
         _, hint_col, btn_col = st.columns([4, 1.2, 0.8])
         with hint_col:
-            st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">点击按钮计算距离结果 ►</div>', unsafe_allow_html=True)
         with btn_col:
             btn_clicked = st.button("🚀 开始计算", type="primary", key="manual_calc")
         
@@ -400,7 +400,7 @@ def main():
 
                     _, hint_col, btn_col = st.columns([4, 1.2, 0.8])
                     with hint_col:
-                        st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
+                        st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">点击按钮计算距离结果 ►</div>', unsafe_allow_html=True)
                     with btn_col:
                         btn2_clicked = st.button("🚀 开始计算", type="primary", key="file_calc")
                     
