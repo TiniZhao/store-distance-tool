@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import math
 import os
+import re
 from io import BytesIO
 from datetime import datetime
 
@@ -33,6 +34,20 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 def load_and_clean_store_data(df):
+    # 列名兼容：统一经纬度列名
+    col_rename = {}
+    for c in df.columns:
+        c_lower = str(c).strip().lower()
+        if c_lower in ('经度', 'lng', 'longitude', 'lon', '东经'):
+            col_rename[c] = '经度'
+        elif c_lower in ('纬度', 'lat', 'latitude', 'lati', '北纬'):
+            col_rename[c] = '纬度'
+        elif c_lower in ('门店名称', '名称', '店名', 'store_name', 'name'):
+            col_rename[c] = '门店名称'
+        elif c_lower in ('省份', 'province', '省'):
+            col_rename[c] = '省份'
+    df = df.rename(columns=col_rename)
+
     if '一级门店组' in df.columns:
         df['门店类型'] = df['一级门店组'].map(TYPE_MAP)
     elif '门店类型' in df.columns:
@@ -300,18 +315,18 @@ def main():
             with col3:
                 input_lat = st.text_input("纬度", value="", placeholder="示例：39.885358（保留6位小数）")
 
-            st.markdown("**或批量输入**（支持两种格式）")
-            st.caption("格式1: 名称, 经度, 纬度　｜　格式2: 经度, 纬度（自动命名）")
+            st.markdown("**或批量输入**（支持多种分隔符）")
+            st.caption("格式1: 名称, 经度, 纬度　｜　格式2: 经度, 纬度（自动命名）　｜　支持逗号、中文逗号、空格、Tab分隔")
             batch_input = st.text_area(
                 "批量输入",
-                placeholder="名称1, 116.504885, 39.885358\n116.40, 39.90\n名称3, 121.50, 31.20",
+                placeholder="名称1, 116.504885, 39.885358\n汉中高铁站美宜佳轻选站  107.03024  33.08761\n116.40，39.90",
                 height=120,
                 label_visibility="collapsed"
             )
 
         _, hint_col, btn_col = st.columns([4, 1.2, 0.8])
         with hint_col:
-            st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">点击按钮计算距离结果 ►</div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
         with btn_col:
             btn_clicked = st.button("🚀 开始计算", type="primary", key="manual_calc")
         
@@ -330,7 +345,10 @@ def main():
 
                 if batch_input.strip():
                     for i, line in enumerate(batch_input.strip().split('\n'), 1):
-                        parts = [p.strip() for p in line.split(',')]
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = [p.strip() for p in re.split(r'[,，\t]+|\s+', line) if p.strip()]
                         try:
                             if len(parts) == 3:
                                 query_data.append({
@@ -400,7 +418,7 @@ def main():
 
                     _, hint_col, btn_col = st.columns([4, 1.2, 0.8])
                     with hint_col:
-                        st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">点击按钮计算距离结果 ►</div>', unsafe_allow_html=True)
+                        st.markdown('<div style="text-align: right; font-size: 0.85em; color: #999; margin-top: 8px;">▲ 点击按钮计算距离结果</div>', unsafe_allow_html=True)
                     with btn_col:
                         btn2_clicked = st.button("🚀 开始计算", type="primary", key="file_calc")
                     
